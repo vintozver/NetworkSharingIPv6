@@ -1,0 +1,9 @@
+﻿# Install
+C:\windows\microsoft.net\framework\v4.0.30319\InstallUtil.exe /u NetworkSharing.exe
+# Uninstall
+C:\windows\microsoft.net\framework\v4.0.30319\InstallUtil.exe /u NetworkSharing.exe
+
+# Service controller
+sc start NetworkSharingIPv6
+sc query NetworkSharingIPv6
+sc stop NetworkSharingIPv6
