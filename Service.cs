@@ -12,49 +12,54 @@ using System.Management.Automation;
 
 namespace NetworkSharing
 {
-    public class AddressListener : IDisposable
+    public class ServedInterface
     {
-        private string UsedInterfaceId = string.Empty;
-        private string UsedInterfaceName = string.Empty;
-        private System.Net.IPAddress UsedIpAddress = null;
-        private List<Process> DhcpServiceProcessList = new List<Process>();
+        private string _Id;  // UUID/GUID from Windows, {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
+        private string _Name;  // Common name (from the Network Manager)
+        private int _Index;  // Index (routing tables, internals). For PowerShell operations
+        private UInt16 _NetworkId;  // NetworkId (the part of the address which identifies the network)
 
-        private void LogLocalInterfaces()
+        public string Id
         {
-            using (System.IO.StreamWriter log = new System.IO.StreamWriter(Program.MyProgramDir_Log, true))
+            get
             {
-                log.WriteLine("=== BEGIN local interfaces ===");
-                foreach (NetworkInterface adapter in NetworkInterface.GetAllNetworkInterfaces())
-                {
-                    log.WriteLine(String.Format("Discovered interface {0}({1})", adapter.Id, adapter.Name));
-                }
-                log.WriteLine("=== END local interfaces ===");
-                log.WriteLine("Please remember, adapters may appear and disappear, this the current state (when the service is initializing).");
+                return _Id;
+            }
+        }
+        public string Name
+        {
+            get
+            {
+                return _Name;
+            }
+        }
+        public int Index
+        {
+            get
+            {
+                return _Index;
+            }
+        }
+        public UInt16 NetworkId
+        {
+            get
+            {
+                return _NetworkId;
             }
         }
 
-        private System.Net.IPAddress GetServedSubnet()
+        public ServedInterface(string Id, string Name, int Index, UInt16 NetworkId)
         {
-            Debug.Assert(!string.IsNullOrEmpty(UsedInterfaceId));
-            Debug.Assert(!string.IsNullOrEmpty(UsedInterfaceName));
-            Debug.Assert(UsedIpAddress != null);
-            Debug.Assert(UsedIpAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6);
-
-            // Full length: 128 bit | 16 bytes
-            // Prefix length: 64 bit, 8 bytes
-            // Address is represented in the network order (as is)
-            byte[] UsedIpAddressBytes = UsedIpAddress.GetAddressBytes();
-            Debug.Assert(UsedIpAddressBytes.Length == 16);
-            // We will slice this /64 subnet by /96 subnets (by 16 bits)
-            // NNNN:NNNN:NNNN:NNNN:FFFF:FFFF:****:****:
-            int UsedIpAddressBytesIndex = 8;
-            while (UsedIpAddressBytesIndex < 12) UsedIpAddressBytes[UsedIpAddressBytesIndex++] = 0xff;
-            while (UsedIpAddressBytesIndex < 16) UsedIpAddressBytes[UsedIpAddressBytesIndex++] = 0x0;
-
-            return new System.Net.IPAddress(UsedIpAddressBytes);
+            Debug.Assert(!string.IsNullOrEmpty(Id));
+            this._Id = Id;
+            Debug.Assert(!string.IsNullOrEmpty(Name));
+            this._Name = Name;
+            Debug.Assert(Index != -1);
+            this._Index = Index;
+            this._NetworkId = NetworkId;
         }
 
-        private int GetInterfaceIndexById(string Id)
+        public static ServedInterface CreateFromId(string Id, UInt16 NetworkId)
         {
             foreach (NetworkInterface adapter in NetworkInterface.GetAllNetworkInterfaces())
             {
@@ -70,18 +75,65 @@ namespace NetworkSharing
                     {
                         throw new NetworkInformationException();
                     }
-                    return IpV6Properties.Index;
+                    return new ServedInterface(Id, adapter.Name, IpV6Properties.Index, NetworkId);
                 }
             }
             throw new ArgumentException("Network adapter with the specified Id was not found");
         }
+    };
 
-        private string RenderDibblerServerConfig(string ServedInterfaceId, string ServedInterfaceName)
+    public class ServiceConfig
+    {
+        public List<ServedInterface> ServedInterfaceList = new List<ServedInterface>();
+    }
+
+    public class ServiceImpl : IDisposable
+    {
+        private ServiceConfig Configuration;
+        private string UsedInterfaceId = string.Empty;
+        private string UsedInterfaceName = string.Empty;
+        private System.Net.IPAddress UsedIpAddress = null;
+        private Process DhcpServiceProcess = null;
+
+        private System.Net.IPAddress GetServedSubnet(UInt16 NetworkId)
         {
-            return String.Format(@"
+            Debug.Assert(!string.IsNullOrEmpty(UsedInterfaceId));
+            Debug.Assert(!string.IsNullOrEmpty(UsedInterfaceName));
+            Debug.Assert(UsedIpAddress != null);
+            Debug.Assert(UsedIpAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6);
+
+            // Full length: 128 bit | 16 bytes
+            // Prefix length: 64 bit, 8 bytes
+            // Address is represented in the network order (as is)
+            byte[] UsedIpAddressBytes = UsedIpAddress.GetAddressBytes();
+            Debug.Assert(UsedIpAddressBytes.Length == 16);
+            // We will slice this /64 subnet as by /112 subnets as follows
+            // XXXX:XXXX:XXXX:XXXX:FFFF:FFFF:NNNN:****:
+            // X - assigned by provider
+            // N - network id
+            // * - host id (will be zero in the subnet)
+            int UsedIpAddressBytesIndex = 8;
+            while (UsedIpAddressBytesIndex < 12) UsedIpAddressBytes[UsedIpAddressBytesIndex++] = 0xff;
+            byte[] NetworkIdBytes = BitConverter.GetBytes(NetworkId);
+            if (BitConverter.IsLittleEndian) Array.Reverse(NetworkIdBytes);
+            Debug.Assert(NetworkIdBytes.Length == 2);
+            UsedIpAddressBytes[UsedIpAddressBytesIndex++] = NetworkIdBytes[0];
+            UsedIpAddressBytes[UsedIpAddressBytesIndex++] = NetworkIdBytes[1];
+            while (UsedIpAddressBytesIndex < 16) UsedIpAddressBytes[UsedIpAddressBytesIndex++] = 0x0;
+            return new System.Net.IPAddress(UsedIpAddressBytes);
+        }
+
+        private string RenderDibblerServerConfig()
+        {
+            StringBuilder ConfigBuilder = new StringBuilder();
+            ConfigBuilder.Append(@"
 log-level 7
 log-mode short
 
+");
+            foreach (var ServedInterface in Configuration.ServedInterfaceList)
+            {
+                ConfigBuilder.AppendFormat(@"
 iface ""{1}"" # {0}
 {{
     T1 60  # renew timout
@@ -91,83 +143,91 @@ iface ""{1}"" # {0}
 
     class
     {{
-        pool {2}/96
+        pool {2}/112
     }}
-    # Attn! https://tools.ietf.org/html/draft-ietf-mif-dhcpv6-route-option-03
-    # https://www.isc.org/blogs/routing-configuration-over-dhcpv6-2/
-    route {2}/96 lifetime 300  # two lines above apply here
     # Google DNS64
     option dns-server 2001:4860:4860::6464, 2001:4860:4860::64
     option domain local
 }}
-", ServedInterfaceId, ServedInterfaceName.Replace("\"", "\\\""), GetServedSubnet().ToString());
+", ServedInterface.Id, ServedInterface.Name.Replace("\"", "\\\""), GetServedSubnet(ServedInterface.NetworkId).ToString());
+            }
+            return ConfigBuilder.ToString();
         }
 
-        private void NewDibblerServerConfigProcess(string ServedInterfaceId, string ServedInterfaceName)
+        private void NewDibblerServerProcess()
         {
-            string InterfaceDirectory = Path.Combine(Program.MyProgramDir, "{EFC61940-A9F8-4D73-9DA4-BF3257FC0686}");
-            Directory.CreateDirectory(InterfaceDirectory);  // Won't fail if the directory already exists, or will create a new one
-            string DibblerServerConfigPath = Path.Combine(InterfaceDirectory, "server.conf");
+            Debug.Assert(DhcpServiceProcess == null);
+            // Generate the DHCPv6 server config
+            string DaemonDirectory = Path.Combine(Program.MyProgramDir, "dibbler_server");
+            Directory.CreateDirectory(DaemonDirectory);  // Won't fail if the directory already exists, or will create a new one
+            string DibblerServerConfigPath = Path.Combine(DaemonDirectory, "server.conf");
             using (FileStream ConfigFile = File.OpenWrite(DibblerServerConfigPath))
             {
-                Byte[] content = new UTF8Encoding(true).GetBytes(RenderDibblerServerConfig(ServedInterfaceId, ServedInterfaceName));
+                Byte[] content = new UTF8Encoding(true).GetBytes(RenderDibblerServerConfig());
                 ConfigFile.Write(content, 0, content.Length);
                 ConfigFile.SetLength(content.Length);
             }
-            var process = new Process
+            // Run the DHCPv6 process
+            DhcpServiceProcess = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = Path.Combine(Program.MyProgramDir, "dibbler-server.exe"),
                     Arguments = "run",
-                    WorkingDirectory = InterfaceDirectory
+                    WorkingDirectory = DaemonDirectory
                 }
             };
-            DhcpServiceProcessList.Add(process);
-            process.Start();
-
-            using (PowerShell PowerShellInstance = PowerShell.Create())
+            DhcpServiceProcess.Start();
+            // Add routes
+            foreach (var ServedInterface in Configuration.ServedInterfaceList)
             {
-                PowerShellInstance.AddScript(@"param([String] $prefix, [int] $iface, [String] $gw) New-NetRoute -DestinationPrefix $prefix -InterfaceIndex $iface -AddressFamily IPv6 -NextHop $gw -Publish Yes -PolicyStore ActiveStore -Confirm:$false
-");
-                PowerShellInstance.AddParameter("prefix", GetServedSubnet().ToString() + "/96");
-                PowerShellInstance.AddParameter("iface", GetInterfaceIndexById(ServedInterfaceId));
-                PowerShellInstance.AddParameter("gw", "::");
-                PowerShellInstance.Invoke();
-                foreach (var PowerShellError in PowerShellInstance.Streams.Error.ReadAll())
+                using (PowerShell PowerShellInstance = PowerShell.Create())
                 {
-                    EventLog.WriteEntry(Program.MyName, string.Format("Error(s) occured while adding a route. More information: {0}", PowerShellError.ToString()), EventLogEntryType.Error);
+                    var cmd = PowerShellInstance.AddScript("param([String] $prefix, [int] $iface, [String] $gw) New-NetRoute -DestinationPrefix $prefix -InterfaceIndex $iface -AddressFamily IPv6 -NextHop $gw -Publish Yes -PolicyStore ActiveStore -Confirm:$false");
+                    PowerShellInstance.AddParameter("prefix", GetServedSubnet(ServedInterface.NetworkId).ToString() + "/112");
+                    PowerShellInstance.AddParameter("iface", ServedInterface.Index);
+                    PowerShellInstance.AddParameter("gw", "::");
+                    PowerShellInstance.Invoke();
+                    foreach (var PowerShellError in PowerShellInstance.Streams.Error.ReadAll())
+                    {
+                        EventLog.WriteEntry(Program.MyName, string.Format("Error(s) occured while adding a route. More information: {0}", PowerShellError.ToString()), EventLogEntryType.Error);
+                    }
                 }
             }
         }
 
-        private void KillDibblerServerConfigProcesses(string ServedInterfaceId, string ServedInterfaceName)
+        private void KillDibblerServerProcess()
         {
-            using (PowerShell PowerShellInstance = PowerShell.Create())
+            Debug.Assert(DhcpServiceProcess != null);
+            // Remove routes
+            foreach (var ServedInterface in Configuration.ServedInterfaceList)
             {
-                PowerShellInstance.AddScript(@"param([String] $prefix, [int] $iface, [String] $gw) Remove-NetRoute -DestinationPrefix @($prefix) -InterfaceIndex 20 -AddressFamily IPv6 -NextHop @($gw) -Publish Yes -Confirm:$false
-");
-                PowerShellInstance.AddParameter("prefix", GetServedSubnet().ToString() + "/96");
-                PowerShellInstance.AddParameter("iface", GetInterfaceIndexById(ServedInterfaceId));
-                PowerShellInstance.AddParameter("gw", "::");
-                PowerShellInstance.Invoke();
-                foreach (var PowerShellError in PowerShellInstance.Streams.Error.ReadAll())
+                using (PowerShell PowerShellInstance = PowerShell.Create())
                 {
-                    EventLog.WriteEntry(Program.MyName, string.Format("Error(s) occured while removing the route. More information: {0}", PowerShellError.ToString()), EventLogEntryType.Error);
+                    PowerShellInstance.AddScript("param([String] $prefix, [int] $iface, [String] $gw) Remove-NetRoute -DestinationPrefix @($prefix) -InterfaceIndex $iface -AddressFamily IPv6 -NextHop @($gw) -Publish Yes -Confirm:$false");
+                    PowerShellInstance.AddParameter("prefix", GetServedSubnet(ServedInterface.NetworkId).ToString() + "/112");
+                    PowerShellInstance.AddParameter("iface", ServedInterface.Index);
+                    PowerShellInstance.AddParameter("gw", "::");
+                    PowerShellInstance.Invoke();
+                    foreach (var PowerShellError in PowerShellInstance.Streams.Error.ReadAll())
+                    {
+                        EventLog.WriteEntry(Program.MyName, string.Format("Error(s) occured while removing the route. More information: {0}", PowerShellError.ToString()), EventLogEntryType.Error);
+                    }
                 }
             }
-            foreach (var CurrentDhcpServiceProcess in DhcpServiceProcessList)
+            // Kill the DHCPv6 process
+            try
             {
-                try
-                {
-                    CurrentDhcpServiceProcess.Kill();
-                }
-                catch (System.InvalidOperationException)
-                {
-                    EventLog.WriteEntry(Program.MyName, "Could not kill dibbler-server (DHCPv6 daemon). This might cause problems. Please stop the service, kill the rest of lingering daemons and restart the service again.", EventLogEntryType.Warning);
-                }
+                DhcpServiceProcess.Kill();
             }
-            DhcpServiceProcessList.Clear();
+            catch (System.InvalidOperationException)
+            {
+                EventLog.WriteEntry(Program.MyName, "Could not kill dibbler-server (DHCPv6 daemon). This might cause problems. Please stop the service, kill the rest of lingering daemons and restart the service again.", EventLogEntryType.Warning);
+            }
+            finally
+            {
+                DhcpServiceProcess = null;
+            }
         }
 
         public void RefreshAddresses()
@@ -198,12 +258,9 @@ iface ""{1}"" # {0}
                         NewUsedInterfaceId = adapter.Id;
                         NewUsedInterfaceName = adapter.Name;
                         NewUsedIpAddress = IpAddressInfo.Address;
-                        using (System.IO.StreamWriter file = new System.IO.StreamWriter(Program.MyProgramDir_Log, true))
-                        {
-                            file.WriteLine(String.Format("Discovered interface {0}({1}), address {2}. Will be using this address. I won't start DHCPv6 daemon on this interface, of course.",
-                                NewUsedInterfaceId, NewUsedInterfaceName, NewUsedIpAddress.ToString())
-                            );
-                        }
+                        Program.Log(String.Format("Discovered interface {0}({1}), address {2}. Will be using this address. I won't start DHCPv6 daemon on this interface, of course.",
+                            NewUsedInterfaceId, NewUsedInterfaceName, NewUsedIpAddress.ToString()
+                        ));
                         break;  // address has been found
                     }
                 }
@@ -211,22 +268,16 @@ iface ""{1}"" # {0}
 
             if (NewUsedInterfaceId == UsedInterfaceId && NewUsedIpAddress == UsedIpAddress)
             {
-                using (System.IO.StreamWriter file = new System.IO.StreamWriter(Program.MyProgramDir_Log, true))
-                {
-                    file.WriteLine(String.Format("No changes"));
-                }
+                Program.Log("No changes");
             }
             else
             {
-                using (System.IO.StreamWriter file = new System.IO.StreamWriter(Program.MyProgramDir_Log, true))
-                {
-                    file.WriteLine(String.Format("Changes. Killing and restarting DHCPv6 servers"));
-                }
+                Program.Log("Changes. Killing and restarting DHCPv6 servers");
 
                 if (UsedIpAddress != null)
                 {
                     // Kill all DHCPv6 servers
-                    KillDibblerServerConfigProcesses("{EFC61940-A9F8-4D73-9DA4-BF3257FC0686}", "VM LAN");
+                    KillDibblerServerProcess();
                 }
 
                 UsedInterfaceId = NewUsedInterfaceId;
@@ -236,14 +287,14 @@ iface ""{1}"" # {0}
                 if (UsedIpAddress != null)
                 {
                     // Start new DHCPv6 servers
-                    NewDibblerServerConfigProcess("{EFC61940-A9F8-4D73-9DA4-BF3257FC0686}", "VM LAN");
+                    NewDibblerServerProcess();
                 }
             }
         }
 
-        public AddressListener()
+        public ServiceImpl(ServiceConfig Configuration)
         {
-            LogLocalInterfaces();
+            this.Configuration = Configuration;
             RefreshAddresses();  // initial "change" to bootstrap the service
         }
 
@@ -264,7 +315,7 @@ iface ""{1}"" # {0}
                 {
                     if (UsedIpAddress != null)
                     {
-                        KillDibblerServerConfigProcesses("{EFC61940-A9F8-4D73-9DA4-BF3257FC0686}", "VM LAN");
+                        KillDibblerServerProcess();
                     }
                     UsedIpAddress = null;
                     disposedFlag = true;
@@ -273,7 +324,7 @@ iface ""{1}"" # {0}
         }
         #endregion
 
-        ~AddressListener()
+        ~ServiceImpl()
         {
             Dispose();
         }
@@ -281,26 +332,28 @@ iface ""{1}"" # {0}
 
     public partial class Service : ServiceBase
     {
-        private AddressListener AddressListenerInstance;
+        private ServiceConfig Configuration;
+        private ServiceImpl ServiceImplInstance;
         private NetworkAddressChangedEventHandler AddressChangeHandler;
 
-        public Service()
+        public Service(ServiceConfig Configuration)
         {
+            this.Configuration = Configuration;
             InitializeComponent();
         }
 
         protected override void OnStart(string[] args)
         {
-            AddressListenerInstance = new AddressListener();
-            AddressChangeHandler = new NetworkAddressChangedEventHandler(AddressListenerInstance.AddressChangedCallback);
+            ServiceImplInstance = new ServiceImpl(Configuration);
+            AddressChangeHandler = new NetworkAddressChangedEventHandler(ServiceImplInstance.AddressChangedCallback);
             NetworkChange.NetworkAddressChanged += AddressChangeHandler;
         }
 
         protected override void OnStop()
         {
             NetworkChange.NetworkAddressChanged -= AddressChangeHandler;
-            AddressListenerInstance.Dispose();
-            AddressListenerInstance = null;
+            ServiceImplInstance.Dispose();
+            ServiceImplInstance = null;
         }
     }
 }
