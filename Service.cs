@@ -6,7 +6,7 @@ using System.Net.NetworkInformation;
 
 namespace NetworkSharing
 {
-    public class ServedInterface
+    public class ServedInterface : IEquatable<ServedInterface>
     {
         private string _Id;  // UUID/GUID from Windows, {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
         private string _Name;  // Common name (from the Network Manager)
@@ -78,11 +78,63 @@ namespace NetworkSharing
             }
             throw new ArgumentException("Network adapter with the specified Id was not found");
         }
+
+        public override int GetHashCode()
+        {
+            return Id.GetHashCode() ^ Name.GetHashCode() ^ Index.GetHashCode() ^ NetworkId.GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            // If parameter cannot be casted to ServedInterface - return false
+            ServedInterface p = obj as ServedInterface;
+            if ((object)p == null)
+            {
+                return false;
+            }
+
+            // Return true if the fields match:
+            return this.Equals(p);
+        }
+
+        public bool Equals(ServedInterface other)
+        {
+            if (other == null) return false;
+            return this.Id == other.Id && this.Name == other.Name && this.Index == other.Index && this.NetworkId == other.NetworkId;
+        }
+
+        public static bool operator ==(ServedInterface a, ServedInterface b)
+        {
+            // If both are null, or both are same instance, return true.
+            if (System.Object.ReferenceEquals(a, b))
+            {
+                return true;
+            }
+
+            // If one is null, but not both, return false.
+            if ((object)a == null || (object)b == null)
+            {
+                return false;
+            }
+
+            // Perform the actual comparison
+            return a.Equals(b);
+        }
+        public static bool operator !=(ServedInterface a, ServedInterface b)
+        {
+            return !(a == b);
+        }
     };
 
-    public class ServiceConfig
+    public class ServiceConfig : IEquatable<ServiceConfig>
     {
         public HashSet<ServedInterface> ServedInterfaceList = new HashSet<ServedInterface>();
+
+        public bool Equals(ServiceConfig other)
+        {
+            if (other == null) return false;
+            return this.ServedInterfaceList.SetEquals(other.ServedInterfaceList);
+        }
     }
 
 
