@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,6 +11,39 @@ using Newtonsoft.Json.Linq;
 
 namespace NetworkSharing
 {
+    public class ProgramConfigInterface
+    {
+        private string _Id;  // UUID/GUID, {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
+        private UInt16 _NetworkId;
+
+        public string Id
+        {
+            get
+            {
+                return _Id;
+            }
+        }
+        public UInt16 NetworkId
+        {
+            get
+            {
+                return _NetworkId;
+            }
+        }
+
+        public ProgramConfigInterface(string Id, UInt16 NetworkId)
+        {
+            Debug.Assert(!string.IsNullOrEmpty(Id));
+            this._Id = Id;
+            this._NetworkId = NetworkId;
+        }
+    };
+
+    public class ProgramConfig
+    {
+        public List<ProgramConfigInterface> InterfaceList = new List<ProgramConfigInterface>();
+    }
+
     static class Program
     {
         public static readonly string MyName = "NetworkSharingIPv6";
@@ -62,14 +96,14 @@ namespace NetworkSharing
                 JsonString = "";
             }
 
-            ServiceConfig ServiceConfigInstance = new ServiceConfig();
+            ProgramConfig ConfigInstance = new ProgramConfig();
             try
             {
                 JToken Config = JToken.Parse(JsonString);
                 JToken Config_ServedInterfaceList = Config["ServedInterfaceList"];
                 foreach (JToken Config_ServedInterface_Item in Config_ServedInterfaceList)
                 {
-                    ServiceConfigInstance.ServedInterfaceList.Add(ServedInterface.CreateFromId(
+                    ConfigInstance.InterfaceList.Add(new ProgramConfigInterface(
                         Config_ServedInterface_Item["Id"].Value<string>(),
                         Config_ServedInterface_Item["NetworkId"].Value<UInt16>()
                     ));
@@ -88,7 +122,7 @@ namespace NetworkSharing
             ServiceBase[] ServicesToRun;
             ServicesToRun = new ServiceBase[]
             {
-                new Service(ServiceConfigInstance)
+                new Service(ConfigInstance)
             };
             ServiceBase.Run(ServicesToRun);
         }
