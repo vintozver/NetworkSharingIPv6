@@ -2,6 +2,7 @@
 using System.Text;
 using System.IO;
 using System.Diagnostics;
+using System.Net;
 using System.Net.NetworkInformation;
 using System.Management.Automation;
 
@@ -12,10 +13,10 @@ namespace NetworkSharing
         private ServiceConfig Configuration = new ServiceConfig();
         private string UsedInterfaceId = string.Empty;
         private string UsedInterfaceName = string.Empty;
-        private System.Net.IPAddress UsedIpAddress = null;
+        private IPAddress UsedIpAddress = null;
         private Process DhcpServiceProcess = null;
 
-        private System.Net.IPAddress GetServedSubnet(UInt16 NetworkId)
+        private IPAddress GetServedSubnet(UInt16 NetworkId)
         {
             Debug.Assert(!string.IsNullOrEmpty(UsedInterfaceId));
             Debug.Assert(!string.IsNullOrEmpty(UsedInterfaceName));
@@ -40,7 +41,7 @@ namespace NetworkSharing
             UsedIpAddressBytes[UsedIpAddressBytesIndex++] = NetworkIdBytes[0];
             UsedIpAddressBytes[UsedIpAddressBytesIndex++] = NetworkIdBytes[1];
             while (UsedIpAddressBytesIndex < 16) UsedIpAddressBytes[UsedIpAddressBytesIndex++] = 0x0;
-            return new System.Net.IPAddress(UsedIpAddressBytes);
+            return new IPAddress(UsedIpAddressBytes);
         }
 
         private string RenderDibblerServerConfig()
@@ -154,7 +155,7 @@ iface ""{1}"" # {0}
         {
             string NewUsedInterfaceId = string.Empty;
             string NewUsedInterfaceName = string.Empty;
-            System.Net.IPAddress NewUsedIpAddress = null;
+            IPAddress NewUsedIpAddress = null;
 
             NetworkInterface[] adapters = NetworkInterface.GetAllNetworkInterfaces();
             foreach (NetworkInterface adapter in adapters)
@@ -186,7 +187,7 @@ iface ""{1}"" # {0}
                 }
             }
 
-            if (NewUsedInterfaceId.Equals(UsedInterfaceId) && NewUsedIpAddress.Equals(UsedIpAddress) && NewConfiguration.ServedInterfaceList.SetEquals(Configuration.ServedInterfaceList))
+            if (string.Equals(UsedInterfaceId, NewUsedInterfaceId) && IPAddress.Equals(UsedIpAddress, NewUsedIpAddress) && NewConfiguration.ServedInterfaceList.SetEquals(Configuration.ServedInterfaceList))
             {
                 Program.Log("No changes");
             }
