@@ -17,6 +17,10 @@
             {
                 components.Dispose();
             }
+            if (disposing && (ServiceImplInstance != null))
+            {
+                ServiceImplInstance.Dispose();
+            }
             base.Dispose(disposing);
         }
 

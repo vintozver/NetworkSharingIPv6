@@ -221,24 +221,33 @@ iface ""{1}"" # {0}
 
         public void Dispose()
         {
-            lock (disposeLock)
+            Dispose(true);
+        }
+
+        protected virtual void Dispose(bool bothManagedAndNative)
+        {
+            if (bothManagedAndNative)
             {
-                if (!disposedFlag)
+                lock (disposeLock)
                 {
-                    if (UsedIpAddress != null)
+                    if (!disposedFlag)
                     {
-                        KillDibblerServerProcess();
+                        if (UsedIpAddress != null)
+                        {
+                            KillDibblerServerProcess();
+                        }
+                        UsedIpAddress = null;
+                        disposedFlag = true;
                     }
-                    UsedIpAddress = null;
-                    disposedFlag = true;
                 }
             }
         }
+
         #endregion
 
         ~ServiceImpl()
         {
-            Dispose();
+            Dispose(false);
         }
     }
 }
