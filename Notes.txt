@@ -1,5 +1,5 @@
 ﻿# Install
-C:\windows\microsoft.net\framework\v4.0.30319\InstallUtil.exe /u NetworkSharing.exe
+C:\windows\microsoft.net\framework\v4.0.30319\InstallUtil.exe NetworkSharing.exe
 # Uninstall
 C:\windows\microsoft.net\framework\v4.0.30319\InstallUtil.exe /u NetworkSharing.exe
 

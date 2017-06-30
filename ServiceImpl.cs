@@ -111,7 +111,7 @@ iface ""{1}"" # {0}
                     PowerShellInstance.Invoke();
                     foreach (var PowerShellError in PowerShellInstance.Streams.Error.ReadAll())
                     {
-                        EventLog.WriteEntry(Program.MyName, string.Format("Error(s) occured while adding a route. More information: {0}", PowerShellError.ToString()), EventLogEntryType.Error);
+                        Program.LogEventLogError(string.Format("Error(s) occured while adding a route. More information: {0}", PowerShellError.ToString()));
                     }
                 }
             }
@@ -132,7 +132,7 @@ iface ""{1}"" # {0}
                     PowerShellInstance.Invoke();
                     foreach (var PowerShellError in PowerShellInstance.Streams.Error.ReadAll())
                     {
-                        EventLog.WriteEntry(Program.MyName, string.Format("Error(s) occured while removing the route. More information: {0}", PowerShellError.ToString()), EventLogEntryType.Error);
+                        Program.LogEventLogError(string.Format("Error(s) occured while removing the route. More information: {0}", PowerShellError.ToString()));
                     }
                 }
             }
@@ -143,7 +143,7 @@ iface ""{1}"" # {0}
             }
             catch (System.InvalidOperationException)
             {
-                EventLog.WriteEntry(Program.MyName, "Could not kill dibbler-server (DHCPv6 daemon). This might cause problems. Please stop the service, kill the rest of lingering daemons and restart the service again.", EventLogEntryType.Warning);
+                Program.LogEventLogWarning("Could not kill dibbler-server (DHCPv6 daemon). This might cause problems. Please stop the service, kill the rest of lingering daemons and restart the service again.");
             }
             finally
             {

@@ -64,6 +64,36 @@ namespace NetworkSharing
         }
 
         /// <summary>
+        /// Write a log entry to the event log. Falls back to file log if the event log is not available.
+        /// </summary>
+        public static void LogEventLogWarning(string message)
+        {
+            try
+            {
+                EventLog.WriteEntry(MyName, message, EventLogEntryType.Warning);
+            }
+            catch (InvalidOperationException)
+            {
+                Log(message);
+            }
+        }
+
+        /// <summary>
+        /// Write a log entry to the event log. Falls back to file log if the event log is not available.
+        /// </summary>
+        public static void LogEventLogError(string message)
+        {
+            try
+            {
+                EventLog.WriteEntry(MyName, message, EventLogEntryType.Error);
+            }
+            catch (InvalidOperationException)
+            {
+                Log(message);
+            }
+        }
+
+        /// <summary>
         /// Log the list of local interfaces
         /// </summary>
         private static void LogLocalInterfaces()
