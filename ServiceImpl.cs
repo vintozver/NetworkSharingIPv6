@@ -4,7 +4,7 @@ using System.IO;
 using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
-using System.Management.Automation;
+using System.Management;
 
 namespace NetworkSharing
 {
@@ -100,19 +100,23 @@ iface ""{1}"" # {0}
             };
             DhcpServiceProcess.Start();
             // Add routes
+            var mgmtRouteCls = new ManagementClass(new ManagementScope("\\\\.\\ROOT\\StandardCimv2"), new ManagementPath("MSFT_NetRoute"), null);
             foreach (var ServedInterface in Configuration.ServedInterfaceList)
             {
-                using (PowerShell PowerShellInstance = PowerShell.Create())
+                var mgmtRoute_CreateParams = mgmtRouteCls.GetMethodParameters("Create");
+                mgmtRoute_CreateParams["DestinationPrefix"] = GetServedSubnet(ServedInterface.NetworkId).ToString() + "/112";
+                mgmtRoute_CreateParams["InterfaceIndex"] = Convert.ToUInt32(ServedInterface.Index);
+                mgmtRoute_CreateParams["AddressFamily"] = Convert.ToUInt16(23);  // IPv6
+                mgmtRoute_CreateParams["NextHop"] = "::";
+                mgmtRoute_CreateParams["Publish"] = Convert.ToByte(2);  // Yes
+                mgmtRoute_CreateParams["PolicyStore"] = "ActiveStore";
+                try
                 {
-                    var cmd = PowerShellInstance.AddScript("param([String] $prefix, [int] $iface, [String] $gw) New-NetRoute -DestinationPrefix $prefix -InterfaceIndex $iface -AddressFamily IPv6 -NextHop $gw -Publish Yes -PolicyStore ActiveStore -Confirm:$false");
-                    PowerShellInstance.AddParameter("prefix", GetServedSubnet(ServedInterface.NetworkId).ToString() + "/112");
-                    PowerShellInstance.AddParameter("iface", ServedInterface.Index);
-                    PowerShellInstance.AddParameter("gw", "::");
-                    PowerShellInstance.Invoke();
-                    foreach (var PowerShellError in PowerShellInstance.Streams.Error.ReadAll())
-                    {
-                        Program.LogEventLogError(string.Format("Error(s) occured while adding a route. More information: {0}", PowerShellError.ToString()));
-                    }
+                    var mgmtRoute_CreateResult = mgmtRouteCls.InvokeMethod("Create", mgmtRoute_CreateParams, null);
+                }
+                catch (ManagementException ex)
+                {
+                    Program.LogEventLogError(string.Format("Error(s) occured while adding a route. More information: {0}", ex.ToString()));
                 }
             }
         }
@@ -121,18 +125,33 @@ iface ""{1}"" # {0}
         {
             Debug.Assert(DhcpServiceProcess != null);
             // Remove routes
+            var mgmtRouteCls = new ManagementClass(new ManagementScope("\\\\.\\ROOT\\StandardCimv2"), new ManagementPath("MSFT_NetRoute"), null);
             foreach (var ServedInterface in Configuration.ServedInterfaceList)
             {
-                using (PowerShell PowerShellInstance = PowerShell.Create())
+                foreach (ManagementObject mgmtRoute in mgmtRouteCls.GetInstances())
                 {
-                    PowerShellInstance.AddScript("param([String] $prefix, [int] $iface, [String] $gw) Remove-NetRoute -DestinationPrefix @($prefix) -InterfaceIndex $iface -AddressFamily IPv6 -NextHop @($gw) -Publish Yes -Confirm:$false");
-                    PowerShellInstance.AddParameter("prefix", GetServedSubnet(ServedInterface.NetworkId).ToString() + "/112");
-                    PowerShellInstance.AddParameter("iface", ServedInterface.Index);
-                    PowerShellInstance.AddParameter("gw", "::");
-                    PowerShellInstance.Invoke();
-                    foreach (var PowerShellError in PowerShellInstance.Streams.Error.ReadAll())
+                    if (
+                        (mgmtRoute["DestinationPrefix"] as string) == (GetServedSubnet(ServedInterface.NetworkId).ToString() + "/112")
+                        &&
+                        (mgmtRoute["InterfaceIndex"] as UInt32?) == ServedInterface.Index
+                        &&
+                        (mgmtRoute["AddressFamily"] as UInt16?) == 23  // IPv6
+                        &&
+                        (mgmtRoute["NextHop"] as string) == "::"
+                        &&
+                        (mgmtRoute["Publish"] as Byte?) == 2  // Yes
+                        &&
+                        (mgmtRoute["Store"] as Byte?) == 1  // Active
+                    )
                     {
-                        Program.LogEventLogError(string.Format("Error(s) occured while removing the route. More information: {0}", PowerShellError.ToString()));
+                        try
+                        {
+                            mgmtRoute.Delete();
+                        }
+                        catch (ManagementException ex)
+                        {
+                            Program.LogEventLogError(string.Format("Error(s) occured while removing the route. More information: {0}", ex.ToString()));
+                        }
                     }
                 }
             }
