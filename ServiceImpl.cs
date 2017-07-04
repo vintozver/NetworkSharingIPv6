@@ -125,33 +125,50 @@ iface ""{1}"" # {0}
         {
             Debug.Assert(DhcpServiceProcess != null);
             // Remove routes
-            var mgmtRouteCls = new ManagementClass(new ManagementScope("\\\\.\\ROOT\\StandardCimv2"), new ManagementPath("MSFT_NetRoute"), null);
-            foreach (var ServedInterface in Configuration.ServedInterfaceList)
+            try
             {
-                foreach (ManagementObject mgmtRoute in mgmtRouteCls.GetInstances())
+                var mgmtRouteCls = new ManagementClass(new ManagementScope("\\\\.\\ROOT\\StandardCimv2"), new ManagementPath("MSFT_NetRoute"), null);
+                foreach (var ServedInterface in Configuration.ServedInterfaceList)
                 {
-                    if (
-                        (mgmtRoute["DestinationPrefix"] as string) == (GetServedSubnet(ServedInterface.NetworkId).ToString() + "/112")
-                        &&
-                        (mgmtRoute["InterfaceIndex"] as UInt32?) == ServedInterface.Index
-                        &&
-                        (mgmtRoute["AddressFamily"] as UInt16?) == 23  // IPv6
-                        &&
-                        (mgmtRoute["NextHop"] as string) == "::"
-                        &&
-                        (mgmtRoute["Publish"] as Byte?) == 2  // Yes
-                        &&
-                        (mgmtRoute["Store"] as Byte?) == 1  // Active
-                    )
+                    foreach (ManagementObject mgmtRoute in mgmtRouteCls.GetInstances())
                     {
-                        try
+                        if (
+                            (mgmtRoute["DestinationPrefix"] as string) == (GetServedSubnet(ServedInterface.NetworkId).ToString() + "/112")
+                            &&
+                            (mgmtRoute["InterfaceIndex"] as UInt32?) == ServedInterface.Index
+                            &&
+                            (mgmtRoute["AddressFamily"] as UInt16?) == 23  // IPv6
+                            &&
+                            (mgmtRoute["NextHop"] as string) == "::"
+                            &&
+                            (mgmtRoute["Publish"] as Byte?) == 2  // Yes
+                            &&
+                            (mgmtRoute["Store"] as Byte?) == 1  // Active
+                        )
                         {
-                            mgmtRoute.Delete();
+                            try
+                            {
+                                mgmtRoute.Delete();
+                            }
+                            catch (ManagementException ex)
+                            {
+                                Program.LogEventLogError(string.Format("Error(s) occured while removing the route. More information: {0}", ex.ToString()));
+                            }
                         }
-                        catch (ManagementException ex)
-                        {
-                            Program.LogEventLogError(string.Format("Error(s) occured while removing the route. More information: {0}", ex.ToString()));
-                        }
+                    }
+                }
+            }
+            catch (System.Runtime.InteropServices.COMException com_ex)
+            {
+                unchecked
+                {
+                    if (com_ex.HResult == (int)0x8007045B)
+                    {
+                        // System shutdown is in progress. Ignore.
+                    }
+                    else
+                    {
+                        throw;
                     }
                 }
             }
