@@ -1,10 +1,12 @@
 ﻿using System;
+using System.Linq;
 using System.Text;
 using System.IO;
 using System.Diagnostics;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Management;
+using System.Collections.Generic;
 
 namespace NetworkSharing
 {
@@ -177,7 +179,7 @@ iface ""{1}"" # {0}
             {
                 DhcpServiceProcess.Kill();
             }
-            catch (System.InvalidOperationException)
+            catch (InvalidOperationException)
             {
                 Program.LogEventLogWarning("Could not kill dibbler-server (DHCPv6 daemon). This might cause problems. Please stop the service, kill the rest of lingering daemons and restart the service again.");
             }
@@ -193,9 +195,16 @@ iface ""{1}"" # {0}
             string NewUsedInterfaceName = string.Empty;
             IPAddress NewUsedIpAddress = null;
 
-            NetworkInterface[] adapters = NetworkInterface.GetAllNetworkInterfaces();
-            foreach (NetworkInterface adapter in adapters)
+            // create the mapping of current interfaces (interface id -> interface ref)
+            var netInterfaceMap = NetworkInterface.GetAllNetworkInterfaces().ToDictionary((adapter) => adapter.Id);
+            // iterate the WAN interface list config by priority
+            foreach (var wanInterface in NewConfiguration.WanInterfaceList)
             {
+                if (!netInterfaceMap.TryGetValue(wanInterface, out var adapter))
+                {
+                    continue;
+                }
+
                 // Skip non-operational adapters, loopback adapters
                 if (adapter.OperationalStatus != OperationalStatus.Up || adapter.NetworkInterfaceType == NetworkInterfaceType.Loopback)
                 {
@@ -223,7 +232,7 @@ iface ""{1}"" # {0}
                 }
             }
 
-            if (string.Equals(UsedInterfaceId, NewUsedInterfaceId) && IPAddress.Equals(UsedIpAddress, NewUsedIpAddress) && NewConfiguration.ServedInterfaceList.SetEquals(Configuration.ServedInterfaceList))
+            if (string.Equals(UsedInterfaceId, NewUsedInterfaceId) && IPAddress.Equals(UsedIpAddress, NewUsedIpAddress) && NewConfiguration.Equals(Configuration))
             {
                 Program.Log("No changes");
             }

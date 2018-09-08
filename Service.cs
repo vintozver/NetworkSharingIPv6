@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.ServiceProcess;
@@ -8,49 +9,35 @@ namespace NetworkSharing
 {
     public class ServedInterface : IEquatable<ServedInterface>
     {
-        private string _Id;  // UUID/GUID from Windows, {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
-        private string _Name;  // Common name (from the Network Manager)
-        private int _Index;  // Index (routing tables, internals). For PowerShell operations
-        private UInt16 _NetworkId;  // NetworkId (the part of the address which identifies the network)
+        /// <summary>
+        /// UUID/GUID from Windows, {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
+        /// </summary>
+        public string Id { get; }
 
-        public string Id
-        {
-            get
-            {
-                return _Id;
-            }
-        }
-        public string Name
-        {
-            get
-            {
-                return _Name;
-            }
-        }
-        public int Index
-        {
-            get
-            {
-                return _Index;
-            }
-        }
-        public UInt16 NetworkId
-        {
-            get
-            {
-                return _NetworkId;
-            }
-        }
+        /// <summary>
+        /// Common name (from the Network Manager)
+        /// </summary>
+        public string Name { get; }
+
+        /// <summary>
+        /// Index (routing tables, internals). For PowerShell operations
+        /// </summary>
+        public int Index { get; }
+
+        /// <summary>
+        /// NetworkId (the part of the address which identifies the network)
+        /// </summary>
+        public UInt16 NetworkId { get; }
 
         public ServedInterface(string Id, string Name, int Index, UInt16 NetworkId)
         {
             Debug.Assert(!string.IsNullOrEmpty(Id));
-            this._Id = Id;
+            this.Id = Id;
             Debug.Assert(!string.IsNullOrEmpty(Name));
-            this._Name = Name;
+            this.Name = Name;
             Debug.Assert(Index != -1);
-            this._Index = Index;
-            this._NetworkId = NetworkId;
+            this.Index = Index;
+            this.NetworkId = NetworkId;
         }
 
         public static ServedInterface CreateFromId(string Id, UInt16 NetworkId)
@@ -129,11 +116,12 @@ namespace NetworkSharing
     public class ServiceConfig : IEquatable<ServiceConfig>
     {
         public HashSet<ServedInterface> ServedInterfaceList = new HashSet<ServedInterface>();
+        public List<string> WanInterfaceList = new List<string>();
 
         public bool Equals(ServiceConfig other)
         {
             if (other == null) return false;
-            return this.ServedInterfaceList.SetEquals(other.ServedInterfaceList);
+            return this.ServedInterfaceList.SetEquals(other.ServedInterfaceList) && this.WanInterfaceList.SequenceEqual(other.WanInterfaceList);
         }
     }
 
@@ -148,7 +136,7 @@ namespace NetworkSharing
         {
             Debug.Assert(ServiceImplInstance != null);
             var ServiceConfigInstance = new ServiceConfig();
-            foreach (var ProgramInterfaceDefinition in ProgramConfigInstance.InterfaceList)
+            foreach (var ProgramInterfaceDefinition in ProgramConfigInstance.LanInterfaceList)
             {
                 ServedInterface ServedInterfaceInstance = null;
                 try
@@ -167,6 +155,7 @@ namespace NetworkSharing
                 }
 
             }
+            ServiceConfigInstance.WanInterfaceList = ProgramConfigInstance.WanInterfaceList;
             ServiceImplInstance.RefreshAddresses(ServiceConfigInstance);
         }
 

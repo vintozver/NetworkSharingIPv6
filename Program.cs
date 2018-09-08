@@ -11,37 +11,37 @@ using Newtonsoft.Json.Linq;
 
 namespace NetworkSharing
 {
-    public class ProgramConfigInterface
+    public class ProgramConfigLanInterface
     {
-        private string _Id;  // UUID/GUID, {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
-        private UInt16 _NetworkId;
+        /// <summary>
+        /// UUID/GUID, {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
+        /// </summary>
+        public string Id { get; }
 
-        public string Id
-        {
-            get
-            {
-                return _Id;
-            }
-        }
-        public UInt16 NetworkId
-        {
-            get
-            {
-                return _NetworkId;
-            }
-        }
+        /// <summary>
+        /// NetworkId (the part of the address which identifies the network)
+        /// </summary>
+        public UInt16 NetworkId { get; }
 
-        public ProgramConfigInterface(string Id, UInt16 NetworkId)
+        public ProgramConfigLanInterface(string Id, UInt16 NetworkId)
         {
             Debug.Assert(!string.IsNullOrEmpty(Id));
-            this._Id = Id;
-            this._NetworkId = NetworkId;
+            this.Id = Id;
+            this.NetworkId = NetworkId;
         }
     };
 
     public class ProgramConfig
     {
-        public List<ProgramConfigInterface> InterfaceList = new List<ProgramConfigInterface>();
+        /// <summary>
+        /// LAN interface list (all interfaces served)
+        /// </summary>
+        public List<ProgramConfigLanInterface> LanInterfaceList = new List<ProgramConfigLanInterface>();
+
+        /// <summary>
+        /// WAN interface list (one will be chosen, by priority and availability, starting from the first)
+        /// </summary>
+        public List<string> WanInterfaceList = new List<string>();
     }
 
     static class Program
@@ -98,7 +98,7 @@ namespace NetworkSharing
         /// </summary>
         private static void LogLocalInterfaces()
         {
-            using (System.IO.StreamWriter log = new System.IO.StreamWriter(Program.MyProgramDir_Log, true))
+            using (StreamWriter log = new StreamWriter(Program.MyProgramDir_Log, true))
             {
                 log.WriteLine("=== BEGIN local interfaces ===");
                 foreach (var adapter in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
@@ -133,10 +133,15 @@ namespace NetworkSharing
                 JToken Config_ServedInterfaceList = Config["ServedInterfaceList"];
                 foreach (JToken Config_ServedInterface_Item in Config_ServedInterfaceList)
                 {
-                    ConfigInstance.InterfaceList.Add(new ProgramConfigInterface(
+                    ConfigInstance.LanInterfaceList.Add(new ProgramConfigLanInterface(
                         Config_ServedInterface_Item["Id"].Value<string>(),
                         Config_ServedInterface_Item["NetworkId"].Value<UInt16>()
                     ));
+                }
+                JToken Config_WanInterfaceList = Config["WanInterfaceList"];
+                foreach (JToken Config_WanInterface_Item in Config_WanInterfaceList)
+                {
+                    ConfigInstance.WanInterfaceList.Add(Config_WanInterface_Item["Id"].Value<string>());
                 }
             }
             catch (JsonReaderException)
